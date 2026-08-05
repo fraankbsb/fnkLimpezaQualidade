@@ -1,0 +1,22 @@
+# build artifacts
+__pycache__/
+*.pyc
+build/
+dist/
+*.spec
+
+# release packaging / compiled launcher (distributed via GitHub Releases, not git)
+payload_v*.zip
+launcher.exe
+
+# modelo de deteccao (~92MB, binario de terceiros) - vai so no zip da release,
+# nao precisa inchar o historico do git
+resources/frozen_east_text_detection.pb
+
+# logs/artefatos locais
+execucao_log.txt
+
+# segredos (nenhum neste projeto hoje, mas reservado por padrao)
+cookies/*.txt
+cookies/*.env
+.env
