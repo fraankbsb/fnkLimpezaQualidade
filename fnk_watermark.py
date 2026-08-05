@@ -129,7 +129,7 @@ def _cluster_bands(all_boxes_per_frame, y_tol=16, x_gap=60):
 
 
 def find_watermark_regions(video_path, net, n_samples=16, min_coverage_ratio=0.4,
-                            y_tol=16, x_gap=60, pad=12, min_conf=0.12):
+                            y_tol=16, x_gap=60, pad=5, min_conf=0.12):
     cap = cv2.VideoCapture(video_path)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))

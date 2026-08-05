@@ -23,14 +23,14 @@ FADE = 0.3
 EQ_AUDIO = True
 
 UNSHARP_LUMA = 1.8
-EQ_CONTRAST = 1.10
+EQ_CONTRAST = 1.20
 EQ_SATURATION = 1.15
 EQ_BRIGHTNESS = 0.04
 EQ_GAMMA = 1.03
 
 BLUR_SIGMA = 25
 BLUR_STEPS = 3
-BLUR_FEATHER = 12  # px de degrade nas bordas do blur, para ficar impercepitivel
+BLUR_FEATHER = 6  # px de degrade nas bordas do blur, para ficar impercepitivel
 
 VIDEO_EXTS = (".mp4", ".mov", ".avi", ".mkv", ".m4v")
 
