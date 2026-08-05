@@ -44,6 +44,43 @@ def run_ffmpeg(cmd):
     return subprocess.run(cmd, capture_output=True, text=True, **kwargs)
 
 
+def ensure_tesseract_installed(log_fn):
+    """A deteccao de watermark so filtra corretamente por '@nome' se o
+    Tesseract estiver instalado - sem ele, o app cairia num modo degradado
+    (borraria qualquer texto persistente, sem checar o '@'). Em vez de deixar
+    isso passar silencioso, instala sozinho via winget antes de processar."""
+    if wm.ensure_tesseract_ready():
+        return True
+
+    log_fn("Tesseract-OCR não encontrado - instalando automaticamente (necessário "
+           "para o filtro de '@nomedoperfil')...")
+    winget = find_exe("winget")
+    if not winget:
+        log_fn("[AVISO] winget não encontrado. Instale o Tesseract-OCR manualmente: "
+               "https://github.com/UB-Mannheim/tesseract/wiki")
+        return False
+
+    kwargs = {}
+    if IS_WIN:
+        kwargs["creationflags"] = CREATE_NO_WINDOW
+    try:
+        subprocess.run(
+            [winget, "install", "--id", "UB-Mannheim.TesseractOCR", "-e",
+             "--silent", "--accept-package-agreements", "--accept-source-agreements"],
+            capture_output=True, text=True, timeout=300, **kwargs)
+    except Exception as e:
+        log_fn(f"[AVISO] Falha ao instalar Tesseract automaticamente: {e}")
+        return False
+
+    if wm.ensure_tesseract_ready():
+        log_fn("Tesseract-OCR instalado com sucesso.")
+        return True
+
+    log_fn("[AVISO] Tesseract não ficou disponível após a instalação. "
+           "O filtro de '@nomedoperfil' ficará desativado nesta sessão.")
+    return False
+
+
 def process_folder(in_dir, out_dir, net_holder, log_fn, progress_fn=None, stop_event=None):
     """Core batch pipeline, free of any GUI toolkit dependency.
     net_holder: dict with key "net" used to lazily load/cache the EAST model across calls.
@@ -60,6 +97,8 @@ def process_folder(in_dir, out_dir, net_holder, log_fn, progress_fn=None, stop_e
     if total == 0:
         log_fn("Nenhum vídeo encontrado na pasta de entrada.")
         return 0, 0, 0, 0.0
+
+    ensure_tesseract_installed(log_fn)
 
     if net_holder.get("net") is None:
         log_fn("Carregando modelo de detecção de marca d'água...")

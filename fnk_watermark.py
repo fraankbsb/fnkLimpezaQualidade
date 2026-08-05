@@ -23,6 +23,15 @@ def _configure_tesseract():
 _TESSERACT_PATH = _configure_tesseract()
 
 
+def ensure_tesseract_ready():
+    """Reexecuta a deteccao do tesseract e atualiza o estado do modulo.
+    Chame isso depois de instalar o Tesseract em tempo de execucao (ex:
+    fnk_app.ensure_tesseract_installed) para nao precisar reiniciar o app."""
+    global _TESSERACT_PATH
+    _TESSERACT_PATH = _configure_tesseract()
+    return _TESSERACT_PATH
+
+
 def load_east_net(model_path):
     return cv2.dnn.readNet(model_path)
 

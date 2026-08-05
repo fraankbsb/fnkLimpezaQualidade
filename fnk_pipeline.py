@@ -1,11 +1,51 @@
 import subprocess
 import json
 
-CODEC_VIDEO = "libx264"
 BITRATE_VIDEO = "6M"
 PRESET = "medium"
 BITRATE_AUDIO = "192k"
 FPS_SAIDA = "60"
+
+# Encoders acelerados por hardware, em ordem de preferencia. Cada PC pode ter
+# GPU diferente (ou nenhuma) - por isso a escolha e feita em runtime testando
+# um encode minusculo, nunca hardcoded, com libx264 (CPU) como fallback
+# garantido. Mesmo bitrate/preset em todos, entao a qualidade nao muda -
+# so a velocidade.
+HW_ENCODER_CANDIDATES = ["h264_nvenc", "h264_qsv", "h264_amf"]
+PRESET_MAP = {
+    "h264_nvenc": "p4",
+    "h264_qsv": "medium",
+    "h264_amf": "balanced",
+    "libx264": "medium",
+}
+
+_encoder_cache = {}
+
+
+def _test_encoder(ffmpeg_path, codec):
+    cmd = [ffmpeg_path, "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+           "-i", "color=black:s=128x128:d=0.3", "-frames:v", "3",
+           "-c:v", codec, "-preset", PRESET_MAP.get(codec, "medium"),
+           "-b:v", "1M", "-f", "null", "-"]
+    try:
+        r = subprocess.run(cmd, capture_output=True, timeout=15)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def get_best_encoder(ffmpeg_path):
+    """Detecta (uma vez por execucao) o melhor encoder de video disponivel
+    neste PC. Sempre cai para libx264 (CPU, funciona em qualquer maquina)
+    se nenhum encoder de GPU estiver disponivel/funcional."""
+    if ffmpeg_path in _encoder_cache:
+        return _encoder_cache[ffmpeg_path]
+    for codec in HW_ENCODER_CANDIDATES:
+        if _test_encoder(ffmpeg_path, codec):
+            _encoder_cache[ffmpeg_path] = codec
+            return codec
+    _encoder_cache[ffmpeg_path] = "libx264"
+    return "libx264"
 
 META_MAKE = "Apple"
 META_MODEL = "iPhone 15 Pro Max"
@@ -128,6 +168,7 @@ def build_audio_filter(dur_seg):
 def build_ffmpeg_cmd(ffmpeg_path, in_path, out_path, regions, dur_seg):
     graph, out_label = build_video_filtergraph(regions, dur_seg)
     af = build_audio_filter(dur_seg)
+    codec = get_best_encoder(ffmpeg_path)
 
     cmd = [ffmpeg_path, "-hide_banner", "-nostdin"]
     if TRIM_START > 0:
@@ -138,7 +179,7 @@ def build_ffmpeg_cmd(ffmpeg_path, in_path, out_path, regions, dur_seg):
             "-filter_complex", graph,
             "-map", out_label, "-map", "0:a?",
             "-r", FPS_SAIDA,
-            "-c:v", CODEC_VIDEO, "-b:v", BITRATE_VIDEO, "-preset", PRESET,
+            "-c:v", codec, "-b:v", BITRATE_VIDEO, "-preset", PRESET_MAP.get(codec, "medium"),
             "-c:a", "aac", "-b:a", BITRATE_AUDIO]
     if af:
         cmd += ["-af", af]
