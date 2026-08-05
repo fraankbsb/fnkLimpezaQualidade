@@ -107,8 +107,9 @@ def git_publish(version: str, message: str):
 
     status = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=PROJECT_DIR)
     if status.returncode == 0:
-        print("Nada novo para commitar (apenas a versão pode ter mudado).")
-    run(["git", "commit", "-m", message])
+        print("Nada novo para commitar (versão local já igual à publicada).")
+    else:
+        run(["git", "commit", "-m", message])
     run(["git", "push"])
 
 
