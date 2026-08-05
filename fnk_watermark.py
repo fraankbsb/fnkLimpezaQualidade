@@ -1,5 +1,26 @@
+import os
+import re
+import shutil
+
 import cv2
 import numpy as np
+import pytesseract
+
+_AT_HANDLE_RE = re.compile(r"@\w")
+
+
+def _configure_tesseract():
+    exe = shutil.which("tesseract")
+    if not exe:
+        fallback = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+        if os.path.exists(fallback):
+            exe = fallback
+    if exe:
+        pytesseract.pytesseract.tesseract_cmd = exe
+    return exe
+
+
+_TESSERACT_PATH = _configure_tesseract()
 
 
 def load_east_net(model_path):
@@ -128,6 +149,46 @@ def _cluster_bands(all_boxes_per_frame, y_tol=16, x_gap=60):
     return bands
 
 
+def _ocr_crop_has_handle(crop_bgr):
+    if crop_bgr.size == 0:
+        return False
+    h = crop_bgr.shape[0]
+    scale = max(1.0, 64.0 / max(1, h))
+    resized = cv2.resize(crop_bgr, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+    gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    enhanced = clahe.apply(gray)
+
+    for variant in (enhanced, cv2.bitwise_not(enhanced)):
+        try:
+            text = pytesseract.image_to_string(variant, config="--psm 6")
+        except Exception:
+            continue
+        if _AT_HANDLE_RE.search(text):
+            return True
+    return False
+
+
+def _verify_regions_have_handle(regions, kept_frames, max_frames_checked=6):
+    if not _TESSERACT_PATH:
+        # Tesseract nao disponivel neste PC: nao da pra confirmar o "@", entao
+        # nao arrisca borrar frase/cena por engano - melhor pular a verificacao
+        # e devolver a lista como veio (comportamento antigo).
+        return regions
+
+    verified = []
+    for (x, y, w, h) in regions:
+        found = False
+        for frame in kept_frames[:max_frames_checked]:
+            crop = frame[y:y + h, x:x + w]
+            if _ocr_crop_has_handle(crop):
+                found = True
+                break
+        if found:
+            verified.append((x, y, w, h))
+    return verified
+
+
 def find_watermark_regions(video_path, net, n_samples=16, min_coverage_ratio=0.4,
                             y_tol=16, x_gap=60, pad=5, min_conf=0.12):
     cap = cv2.VideoCapture(video_path)
@@ -142,6 +203,7 @@ def find_watermark_regions(video_path, net, n_samples=16, min_coverage_ratio=0.4
     sample_idxs = sorted(set(int(total_frames * i / n_samples) for i in range(n_samples)))
 
     all_boxes_per_frame = []
+    kept_frames = []
     for idx in sample_idxs:
         cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
         ok, frame = cap.read()
@@ -149,6 +211,7 @@ def find_watermark_regions(video_path, net, n_samples=16, min_coverage_ratio=0.4
             continue
         boxes = detect_text_boxes(frame, net, min_conf=min_conf)
         all_boxes_per_frame.append(boxes)
+        kept_frames.append(frame)
     cap.release()
 
     n_used = len(all_boxes_per_frame)
@@ -163,11 +226,14 @@ def find_watermark_regions(video_path, net, n_samples=16, min_coverage_ratio=0.4
 
     rects = _merge_close_rects([b["rect"] for b in persistent], x_gap=x_gap, y_gap=y_tol)
 
-    final = []
+    candidates = []
     for (x1, y1, x2, y2) in rects:
         x1 = max(0, x1 - pad)
         y1 = max(0, y1 - pad)
         x2 = min(W, x2 + pad)
         y2 = min(H, y2 + pad)
-        final.append((x1, y1, x2 - x1, y2 - y1))  # x, y, w, h
-    return final
+        candidates.append((x1, y1, x2 - x1, y2 - y1))  # x, y, w, h
+
+    # so mantem regioes cujo texto realmente comeca com @ - descarta legendas/
+    # frases e falsos positivos de cena estatica (console de carro, espelho, etc.)
+    return _verify_regions_have_handle(candidates, kept_frames)
