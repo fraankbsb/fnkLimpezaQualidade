@@ -17,8 +17,9 @@ Ships two independent things:
    video processor, run directly or via the launcher.
 2. **The launcher/auto-update system** (`launcher.py`, `publish.py`,
    `watch_and_publish.py`) — a self-updating distribution mechanism so the compiled
-   `launcher.exe` never needs rebuilding; only the app source is redistributed, via
-   GitHub Releases.
+   `launcher.exe` normally never needs rebuilding; only the app source is
+   redistributed, via GitHub Releases. (Exception: actual bugs in `launcher.py`
+   itself still require a recompile + re-upload — see the gotcha below.)
 
 ## Commands
 
@@ -45,10 +46,14 @@ iniciar_vigia.bat          # or: python watch_and_publish.py
 ```
 
 Rebuild the launcher (only needed if `launcher.py` itself changes — the app payload
-does **not** require this):
+does **not** require this). Since `launcher_setup.zip` embeds `launcher.exe`, a
+launcher rebuild is only live for new-PC installs once it's re-uploaded — bumping
+`version.json` isn't required for this, `gh release upload` is enough:
 ```
 python -m PyInstaller --noconfirm --onefile --windowed --name launcher launcher.py
 copy dist\launcher.exe .   # launcher.exe must live next to update_config.json/version.json
+python -c "import publish; publish.build_launcher_setup_zip()"
+gh release upload vX.Y.Z launcher_setup.zip --repo fraankbsb/fnkLimpezaQualidade --clobber
 ```
 
 Rebuild the standalone all-in-one exe (bundles Python/opencv/numpy, no system deps —
@@ -123,11 +128,10 @@ JSON files that live next to the compiled `launcher.exe`:
   `launcher.py` update-download (the zip always contains the new `version.json`,
   so extracting it is what makes the local version match).
 
-**`launcher.py`** (compiled once to `launcher.exe`, never needs recompiling after):
-reads those two files, and on "Atualizar App" hits
-`GET api.github.com/repos/{repo}/releases/latest`, compares `tag_name` to local
-`version.json`, and if different downloads the release's `.zip` asset and
-`zipfile.extractall()`s it directly over the app folder — this only touches files
+**`launcher.py`** (compiled to `launcher.exe`): reads those two files, and on
+"Atualizar App" hits `GET api.github.com/repos/{repo}/releases/latest`, compares
+`tag_name` to local `version.json`, and if different downloads the release's zip
+asset and extracts it directly over the app folder — this only touches files
 actually present in the zip, so anything not in `GIT_PAYLOAD_FILES`/
 `ZIP_EXTRA_PATHS` (e.g. a future `cookies/` secrets folder) is never touched. "Iniciar
 App" runs `entry_point` via `subprocess.Popen([python, entry_point], creationflags=
@@ -136,6 +140,19 @@ dependencies (`requirements.txt`) installed on whatever machine runs it; it is n
 frozen/bundled execution. All paths are derived from `Path(sys.executable).resolve()
 .parent` when frozen (never a hardcoded drive letter), so the same exe works
 regardless of which PC/drive it's copied to.
+
+Releases carry **two** zip assets, and `find_zip_asset()` must tell them apart:
+`payload_vX.Y.Z.zip` (the actual code update) and `launcher_setup.zip` (see below).
+It matches on the `payload_` prefix first, with a fallback that explicitly excludes
+`launcher_setup.zip` by name. `download_and_extract()` also skips any entry literally
+named `launcher.exe` as a second line of defense. Both exist because of a real
+incident: once `launcher_setup.zip` started being attached to releases,
+`find_zip_asset` (originally "just grab the first `.zip` on the release") sometimes
+picked it instead of the payload, and extracting it tried to overwrite the running
+`launcher.exe` — Windows locks a binary while it's executing, so that raised
+`PermissionError: [Errno 13]` in the "Atualizar App" button. **If you ever add another
+asset to the release, re-check `find_zip_asset` — don't assume "first .zip found" is
+safe.**
 
 **`publish.py`**: `GIT_PAYLOAD_FILES` (small source files, git-tracked) vs
 `ZIP_EXTRA_PATHS` (currently just `resources/`, the ~92MB EAST model — deliberately
@@ -146,6 +163,14 @@ path, since a scheduled/background invocation may not have an interactive shell'
 PATH. Version bumps are always patch-level in `auto` mode; commits are skipped
 gracefully (not treated as an error) when there's nothing staged, which matters
 because `watch_and_publish.py` calls `publish.py auto` on every detected change.
+
+Every `publish.py` run also builds and uploads **`launcher_setup.zip`**
+(`launcher.exe` + `update_config.json`, from `LAUNCHER_SETUP_FILES`) as a second
+release asset, alongside the code payload. Because the asset name never changes,
+`github.com/<repo>/releases/latest/download/launcher_setup.zip` is a permanently
+valid "install on a new PC" link — no need to hand out a version-specific URL or
+update anything when a new release goes out. If `launcher.exe` is missing locally
+when publishing, this step is skipped with a warning rather than failing the release.
 
 **`watch_and_publish.py`**: polls mtimes of `GIT_PAYLOAD_FILES`-equivalent
 (`WATCHED_FILES`) every 2s; on change, waits for 8s of silence before calling
