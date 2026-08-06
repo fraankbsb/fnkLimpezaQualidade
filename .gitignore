@@ -7,6 +7,7 @@ dist/
 
 # release packaging / compiled launcher (distributed via GitHub Releases, not git)
 payload_v*.zip
+launcher_setup.zip
 launcher.exe
 
 # modelo de deteccao (~92MB, binario de terceiros) - vai so no zip da release,

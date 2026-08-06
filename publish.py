@@ -28,6 +28,14 @@ ZIP_EXTRA_PATHS = [
     "resources",
 ]
 
+# Pacote separado (mesmo nome em toda release) so com o necessario pra
+# instalar do zero num PC novo: launcher.exe + os dois JSONs de config.
+# Como o nome do asset nunca muda, o link
+# github.com/<repo>/releases/latest/download/launcher_setup.zip
+# fica valido pra sempre, mesmo depois de novas releases.
+LAUNCHER_SETUP_FILES = ["launcher.exe", "update_config.json"]
+LAUNCHER_SETUP_NAME = "launcher_setup.zip"
+
 
 def find_gh() -> str:
     gh = shutil.which("gh")
@@ -101,6 +109,22 @@ def build_zip(version: str) -> Path:
     return zip_path
 
 
+def build_launcher_setup_zip() -> Path | None:
+    missing = [p for p in LAUNCHER_SETUP_FILES if not (PROJECT_DIR / p).exists()]
+    if missing:
+        print(f"[aviso] launcher_setup.zip nao gerado, faltando: {missing}")
+        return None
+
+    import zipfile
+    zip_path = PROJECT_DIR / LAUNCHER_SETUP_NAME
+    if zip_path.exists():
+        zip_path.unlink()
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for rel in LAUNCHER_SETUP_FILES:
+            zf.write(PROJECT_DIR / rel, arcname=rel)
+    return zip_path
+
+
 def git_publish(version: str, message: str):
     add_paths = [p for p in GIT_PAYLOAD_FILES if (PROJECT_DIR / p).exists()]
     run(["git", "add", *add_paths])
@@ -113,9 +137,9 @@ def git_publish(version: str, message: str):
     run(["git", "push"])
 
 
-def gh_release(gh_exe: str, version: str, message: str, zip_path: Path):
+def gh_release(gh_exe: str, version: str, message: str, assets: list[Path]):
     tag = f"v{version}"
-    run([gh_exe, "release", "create", tag, str(zip_path),
+    run([gh_exe, "release", "create", tag, *[str(a) for a in assets],
          "--repo", REPO, "--title", tag, "--notes", message])
 
 
@@ -141,7 +165,11 @@ def main():
     write_version(version)
     git_publish(version, message)
     zip_path = build_zip(version)
-    gh_release(gh_exe, version, message, zip_path)
+    assets = [zip_path]
+    setup_zip = build_launcher_setup_zip()
+    if setup_zip:
+        assets.append(setup_zip)
+    gh_release(gh_exe, version, message, assets)
 
     print(f"OK: v{version} publicada em {REPO}.")
 
