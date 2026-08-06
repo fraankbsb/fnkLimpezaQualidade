@@ -98,10 +98,14 @@ structure into the output folder, and per video:
 2. **ffmpeg command construction** (`fnk_pipeline.build_ffmpeg_cmd`) — builds one
    `-filter_complex` graph combining the quality filter chain (unsharp, eq,
    lenscorrection, noise, deflicker, hue, speed/pitch) with a per-region blur: each
-   detected region is `split` off, cropped, `gblur`'d, and alpha-feathered (via a
-   `geq` alpha ramp, `BLUR_FEATHER` px) before being `overlay`'d back — this gives a
-   soft-edged patch instead of a visible rectangle. All quality/blur constants live
-   as module-level globals at the top of `fnk_pipeline.py`.
+   detected region is `split` off, cropped, `gblur`'d, lightly lifted with
+   `eq=gamma=BLUR_GAMMA:brightness=BLUR_BRIGHTNESS` (a blurred patch over a dark
+   scene otherwise reads as a flat black block instead of blurred texture — this
+   lift is applied only to the blur branch, never the main video), and
+   alpha-feathered (via a `geq` alpha ramp, `BLUR_FEATHER` px) before being
+   `overlay`'d back — this gives a soft-edged patch instead of a visible rectangle.
+   All quality/blur constants live as module-level globals at the top of
+   `fnk_pipeline.py`.
 
 3. **Encoding** — `get_best_encoder()` probes `h264_nvenc` → `h264_qsv` → `h264_amf`
    → `libx264` with a throwaway 3-frame test encode and caches whichever works for
@@ -117,6 +121,16 @@ structure into the output folder, and per video:
 Threading model: `fnk_app.App` runs `process_folder` in a background thread; all
 UI updates go through a `queue.Queue` polled by `root.after` (`_poll_queue`) —
 tkinter widgets are never touched from the worker thread directly.
+
+**In-place processing** (input folder == output folder, e.g. "clean these videos and
+replace the originals"): ffmpeg refuses to write to a file it currently has open for
+reading (`FFmpeg cannot edit existing files in-place`, exit code shows up as the huge
+unsigned `4294967274` = `-22`/`EINVAL` reinterpreted). `process_folder` detects when
+the computed `out_path` resolves to the same file as `in_path`, and in that case
+encodes to a `.{stem}.tmpN.mp4` sibling file first, then `os.replace()`s it over the
+original only after ffmpeg exits successfully (atomic swap; the temp file is removed
+on failure). The normal cross-folder case is untouched by this — no extra rename
+happens unless the collision is real.
 
 ### Launcher / auto-update system
 
