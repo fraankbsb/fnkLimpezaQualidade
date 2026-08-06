@@ -127,6 +127,13 @@ def process_folder(in_dir, out_dir, net_holder, log_fn, progress_fn=None, stop_e
         os.makedirs(out_subdir, exist_ok=True)
         out_path = os.path.join(out_subdir, stem + ".mp4")
 
+        # Pasta de saida igual a de entrada (processar "no lugar") faz o
+        # ffmpeg recusar (nao escreve em cima do arquivo que esta lendo).
+        # Nesse caso grava num temporario e so substitui o original depois
+        # que o ffmpeg terminar com sucesso.
+        same_file = os.path.normcase(os.path.abspath(out_path)) == os.path.normcase(os.path.abspath(in_path))
+        build_target = os.path.join(out_subdir, f".{stem}.tmp{i}.mp4") if same_file else out_path
+
         log_fn(f"[{i}/{total}] {rel}")
 
         try:
@@ -137,10 +144,16 @@ def process_folder(in_dir, out_dir, net_holder, log_fn, progress_fn=None, stop_e
                 log_fn("    nenhuma marca d'água detectada (nada será borrado)")
 
             dur, w, h = pipe.probe_duration_and_size(ffprobe_path, in_path)
-            cmd = pipe.build_ffmpeg_cmd(ffmpeg_path, in_path, out_path, regions, dur)
+            cmd = pipe.build_ffmpeg_cmd(ffmpeg_path, in_path, build_target, regions, dur)
             result = run_ffmpeg(cmd)
 
-            if result.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+            success = result.returncode == 0 and os.path.exists(build_target) and os.path.getsize(build_target) > 0
+            if success and same_file:
+                os.replace(build_target, out_path)  # atomico - ffmpeg ja fechou a leitura do original
+            elif not success and os.path.exists(build_target):
+                os.remove(build_target)
+
+            if success:
                 ok_count += 1
                 log_fn("    [OK]\n")
             else:
