@@ -64,10 +64,22 @@ def github_api_get(url: str):
         return json.loads(resp.read().decode("utf-8"))
 
 
+SETUP_ASSET_NAME = "launcher_setup.zip"
+
+
 def find_zip_asset(release_json):
-    for asset in release_json.get("assets", []):
+    """Escolhe o zip de PAYLOAD (codigo do app) para a atualizacao - nunca o
+    launcher_setup.zip (que contem o proprio launcher.exe). Uma release pode
+    ter os dois assets; pegar o errado tentaria sobrescrever o launcher.exe
+    enquanto ele esta rodando, o que o Windows bloqueia (PermissionError)."""
+    assets = release_json.get("assets", [])
+    for asset in assets:
         name = asset.get("name", "")
-        if name.lower().endswith(".zip"):
+        if name.lower().startswith("payload_") and name.lower().endswith(".zip"):
+            return asset.get("browser_download_url"), name
+    for asset in assets:
+        name = asset.get("name", "")
+        if name.lower().endswith(".zip") and name.lower() != SETUP_ASSET_NAME:
             return asset.get("browser_download_url"), name
     return None, None
 
@@ -80,8 +92,13 @@ def download_and_extract(url: str, dest_dir: Path, log):
     log(f"Download concluído ({len(data) / 1024 / 1024:.1f} MB). Extraindo...")
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         # Sobrescreve apenas os arquivos que estao no zip - nada mais na pasta
-        # e tocado (cookies/segredos, launcher.exe, .git, etc. ficam intactos).
-        zf.extractall(dest_dir)
+        # e tocado (cookies/segredos, .git, etc. ficam intactos). Nunca escreve
+        # por cima do launcher.exe em execucao, mesmo que ele venha no zip por
+        # engano (defesa extra alem do find_zip_asset acima).
+        for info in zf.infolist():
+            if Path(info.filename).name.lower() == "launcher.exe":
+                continue
+            zf.extract(info, dest_dir)
     log("Atualização aplicada.")
 
 
