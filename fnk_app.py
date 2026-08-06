@@ -64,20 +64,30 @@ def ensure_tesseract_installed(log_fn):
     if IS_WIN:
         kwargs["creationflags"] = CREATE_NO_WINDOW
     try:
-        subprocess.run(
+        result = subprocess.run(
             [winget, "install", "--id", "UB-Mannheim.TesseractOCR", "-e",
              "--silent", "--accept-package-agreements", "--accept-source-agreements"],
             capture_output=True, text=True, timeout=300, **kwargs)
     except Exception as e:
         log_fn(f"[AVISO] Falha ao instalar Tesseract automaticamente: {e}")
+        log_fn("    Rode manualmente no PowerShell: winget install --id "
+               "UB-Mannheim.TesseractOCR -e --silent --accept-package-agreements "
+               "--accept-source-agreements")
         return False
 
     if wm.ensure_tesseract_ready():
         log_fn("Tesseract-OCR instalado com sucesso.")
         return True
 
-    log_fn("[AVISO] Tesseract não ficou disponível após a instalação. "
-           "O filtro de '@nomedoperfil' ficará desativado nesta sessão.")
+    log_fn("[AVISO] Tesseract não ficou disponível após a instalação "
+           f"(winget saiu com código {result.returncode}). O filtro de "
+           "'@nomedoperfil' ficará desativado nesta sessão.")
+    saida = ((result.stdout or "") + (result.stderr or "")).strip()
+    if saida:
+        log_fn("    Saída do winget:")
+        log_fn("    " + saida[-1200:].replace("\n", "\n    "))
+    log_fn("    Rode manualmente no PowerShell pra ver o erro completo: "
+           "winget install --id UB-Mannheim.TesseractOCR -e")
     return False
 
 
