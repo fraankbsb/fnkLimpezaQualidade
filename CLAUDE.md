@@ -213,3 +213,12 @@ followed for any new default paths.
 added — `tesseract` (auto-installed via `winget install UB-Mannheim.TesseractOCR` on
 first run if missing; see `fnk_app.ensure_tesseract_installed`). None of these are
 bundled into the git-tracked payload.
+
+`ensure_tesseract_installed` passes `--source winget` explicitly. Without it, winget
+searches every configured source including `msstore`, and on some PCs that source
+fails with a certificate error (`0x8a15005e`) even though the package itself only
+ever lives in the `winget` source — the whole install aborts before it gets to the
+package that's actually found. If Tesseract still isn't available after the install
+attempt, the function logs winget's real exit code/stdout/stderr (not just "didn't
+work"), since silent failures here were hard to debug on a PC without direct shell
+access — this happened once for real and cost a manual back-and-forth to diagnose.
