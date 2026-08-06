@@ -71,6 +71,8 @@ EQ_GAMMA = 1.03
 BLUR_SIGMA = 25
 BLUR_STEPS = 3
 BLUR_FEATHER = 6  # px de degrade nas bordas do blur, para ficar impercepitivel
+BLUR_GAMMA = 1.35    # clareia as sombras do remendo borrado (cenas escuras nao viram um bloco solido)
+BLUR_BRIGHTNESS = 0.10
 
 VIDEO_EXTS = (".mp4", ".mov", ".avi", ".mkv", ".m4v")
 
@@ -131,7 +133,9 @@ def build_video_filtergraph(regions, dur_seg):
 
     for i, (x, y, w, h) in enumerate(regions):
         graph += (f"[vsrc{i}]crop={w}:{h}:{x}:{y},"
-                   f"gblur=sigma={BLUR_SIGMA}:steps={BLUR_STEPS},format=yuva420p,{geq}[vblur{i}];")
+                   f"gblur=sigma={BLUR_SIGMA}:steps={BLUR_STEPS},"
+                   f"eq=gamma={BLUR_GAMMA}:brightness={BLUR_BRIGHTNESS},"
+                   f"format=yuva420p,{geq}[vblur{i}];")
 
     prev = "vmain"
     for i, (x, y, w, h) in enumerate(regions):
