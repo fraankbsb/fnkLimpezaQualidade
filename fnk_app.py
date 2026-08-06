@@ -66,13 +66,16 @@ def ensure_tesseract_installed(log_fn):
     try:
         result = subprocess.run(
             [winget, "install", "--id", "UB-Mannheim.TesseractOCR", "-e",
+             "--source", "winget",  # evita depender da fonte "msstore", que
+             # falha com erro de certificado (0x8a15005e) em alguns PCs mesmo
+             # quando o pacote so existe na fonte "winget" mesmo
              "--silent", "--accept-package-agreements", "--accept-source-agreements"],
             capture_output=True, text=True, timeout=300, **kwargs)
     except Exception as e:
         log_fn(f"[AVISO] Falha ao instalar Tesseract automaticamente: {e}")
         log_fn("    Rode manualmente no PowerShell: winget install --id "
-               "UB-Mannheim.TesseractOCR -e --silent --accept-package-agreements "
-               "--accept-source-agreements")
+               "UB-Mannheim.TesseractOCR -e --source winget --silent "
+               "--accept-package-agreements --accept-source-agreements")
         return False
 
     if wm.ensure_tesseract_ready():
@@ -87,7 +90,7 @@ def ensure_tesseract_installed(log_fn):
         log_fn("    Saída do winget:")
         log_fn("    " + saida[-1200:].replace("\n", "\n    "))
     log_fn("    Rode manualmente no PowerShell pra ver o erro completo: "
-           "winget install --id UB-Mannheim.TesseractOCR -e")
+           "winget install --id UB-Mannheim.TesseractOCR -e --source winget")
     return False
 
 
